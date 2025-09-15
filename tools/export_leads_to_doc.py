@@ -1,4 +1,3 @@
-from typing import Union
 from typing import Any
 import pandas as pd
 import os
@@ -7,111 +6,65 @@ from core.tool.tool_class import Tool
 
 class ExportLeadsToDocTool(Tool):
     def __init__(self):
-        super().__init__(name="ExportLeadsToDocTool", description="Export leads to an Excel file.")
+        input_schema = {
+            "company_name": {
+                "type": "string",
+                "required": True,
+                "description": "The name of the company"
+            },
+            "phone_number": {
+                "type": "array",
+                "required": False,
+                "description": "The phone number of the company"
+            },
+            "email": {
+                "type": "array",
+                "required": False,
+                "description": "The email of the company"
+            },
+            "website": {
+                "type": "string",
+                "required": True,
+                "description": "The website of the company"
+            },
+            "location": {
+                "type": "string",
+                "required": True,
+                "description": "The location of the company"
+            },
+            "company_description": {
+                "type": "string",
+                "required": True,
+                "description": "The description of the company"
+            },
+            "employees": {
+                "type": "string",
+                "required": False,
+                "description": "Employees whose roles and designation that comes in input their email and phone number"
+            }
+        }
+        super().__init__(name="ExportLeadsToDocTool", description="Export leads to an Excel file.", input_schema=input_schema)
 
-    def get_input_schema_prompt(self) -> str:
-        return """
-        ExportLeadsToDocTool Input Schema:
-        The input should be a dictionary with the following required fields:
-        [
-            {
-                "company_name": "string (required) - The name of the company",
-                "website": "string (required) - The company's website URL",
-                "location": "string (required) - The company's location/address",
-                "phone_number": "array of strings (required) - List of phone numbers for the company",
-                "email": "array of strings (required) - List of email addresses for the company"
-            }
-        ]
-        
-        Example:
-        [
-            {
-                "company_name": "Acme Corporation",
-                "website": "https://www.acme.com",
-                "location": "123 Business St, City, State 12345",
-                "phone_number": ["+1-555-123-4567", "+1-555-987-6543"],
-                "email": ["contact@acme.com", "sales@acme.com", "info@acme.com"]
-            }
-        ]
+    def _get_display_name(self, field_name: str) -> str:
         """
+        Convert field name to a nice display name for Excel columns.
+        """
+        # Convert snake_case to Title Case
+        display_name = field_name.replace('_', ' ').title()
+        
+        # Handle common field name mappings
+        field_mappings = {
+            'company_name': 'Company Name',
+            'phone_number': 'Phone Numbers',
+            'email': 'Email Addresses',
+            'website': 'Website',
+            'location': 'Location',
+            'company_description': 'Company Description',
+            'employees': 'Employees'
+        }
+        
+        return field_mappings.get(field_name, display_name)
     
-    def validate_input_schema(self, input_data: Any) -> Union[bool, str]:
-        """
-        Validate that input_data matches the expected schema for ExportLeadsToDocTool.
-        
-        Expected schema:
-        - input_data should be a list of dictionaries
-        - Each dictionary should have: company_name, website, location, phone_number, email
-        - company_name, website, location should be strings
-        - phone_number and email should be lists of strings
-        
-        Returns:
-        - True if validation passes
-        - Error message string if validation fails
-        """
-        try:
-            # Check if input_data is a list
-            if not isinstance(input_data, list):
-                return "Input data must be a list of lead dictionaries"
-            
-            # Check if list is not empty
-            if not input_data:
-                return "Input data cannot be an empty list"
-            
-            # Validate each lead dictionary in the list
-            for i, lead in enumerate(input_data):
-                if not isinstance(lead, dict):
-                    return f"Lead at index {i} must be a dictionary"
-                
-                # Check required fields
-                required_fields = ["company_name", "website", "location", "phone_number", "email"]
-                for field in required_fields:
-                    if field not in lead:
-                        return f"Lead at index {i} is missing required field: {field}"
-                
-                # Validate company_name
-                if not isinstance(lead["company_name"], str) or not lead["company_name"].strip():
-                    return f"Lead at index {i}: company_name must be a non-empty string"
-                
-                # # Validate website
-                # if not isinstance(lead["website"], str) or not lead["website"].strip():
-                #     return f"Lead at index {i}: website must be a non-empty string"
-                
-                # # Validate location
-                # if not isinstance(lead["location"], str) or not lead["location"].strip():
-                #     return f"Lead at index {i}: location must be a non-empty string"
-                
-                # # Validate phone_number
-                # if not isinstance(lead["phone_number"], list):
-                #     return f"Lead at index {i}: phone_number must be a list"
-                
-                # if not lead["phone_number"]:  # Check if list is not empty
-                #     return f"Lead at index {i}: phone_number list cannot be empty"
-                
-                # for j, phone in enumerate(lead["phone_number"]):
-                #     if not isinstance(phone, str) or not phone.strip():
-                #         return f"Lead at index {i}, phone_number at index {j}: must be a non-empty string"
-                
-                # Validate email
-                # if not isinstance(lead["email"], list):
-                #     return f"Lead at index {i}: email must be a list"
-                
-                # if not lead["email"]:  # Check if list is not empty
-                #     return f"Lead at index {i}: email list cannot be empty"
-                
-                # for j, email in enumerate(lead["email"]):
-                #     if not isinstance(email, str) or not email.strip():
-                #         return f"Lead at index {i}, email at index {j}: must be a non-empty string"
-                    
-                #     # Basic email format validation
-                #     if "@" not in email or "." not in email.split("@")[-1]:
-                #         return f"Lead at index {i}, email at index {j}: invalid email format"
-            
-            return True
-            
-        except Exception as e:
-            return f"Validation error: {str(e)}"
-
     def run(self, input_data: Any) -> Any:
         """
         Export leads data to an Excel file and save it to the local system.
@@ -142,20 +95,29 @@ class ExportLeadsToDocTool(Tool):
             filename = f"leads_export_{timestamp}.xlsx"
             filepath = os.path.join(export_dir, filename)
             
-            # Prepare data for Excel export
+            # Prepare data for Excel export dynamically based on schema
             excel_data = []
             for lead in input_data:
-                # Join phone numbers and emails with semicolons for better readability
-                phone_numbers = "; ".join(lead["phone_number"])
-                email_addresses = "; ".join(lead["email"])
+                excel_row = {}
                 
-                excel_data.append({
-                    "Company Name": lead["company_name"],
-                    "Website": lead["website"],
-                    "Location": lead["location"],
-                    "Phone Numbers": phone_numbers,
-                    "Email Addresses": email_addresses
-                })
+                for field_name in self.input_schema.keys():
+                    if field_name in lead:
+                        field_value = lead[field_name]
+                        
+                        # Handle array fields by joining with line breaks for better readability
+                        if isinstance(field_value, list):
+                            if field_value:  # Only process non-empty lists
+                                display_value = "\n".join(str(item) for item in field_value)
+                            else:
+                                display_value = ""  # Empty list shows as empty string
+                        else:
+                            display_value = str(field_value) if field_value is not None else ""
+                        
+                        # Create a nice display name for the column
+                        display_name = self._get_display_name(field_name)
+                        excel_row[display_name] = display_value
+                
+                excel_data.append(excel_row)
             
             # Create DataFrame and export to Excel
             df = pd.DataFrame(excel_data)
@@ -164,33 +126,71 @@ class ExportLeadsToDocTool(Tool):
             with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name='Leads', index=False)
                 
-                # Get the workbook and worksheet for formatting
-                workbook = writer.book
+                # Get the worksheet for formatting
                 worksheet = writer.sheets['Leads']
                 
-                # Auto-adjust column widths
+                # Auto-adjust column widths based on maximum content length
                 for column in worksheet.columns:
                     max_length = 0
                     column_letter = column[0].column_letter
-                    for cell in column:
+                    
+                    # Check header length first
+                    header_cell = worksheet[f"{column_letter}1"]
+                    if header_cell.value:
+                        max_length = len(str(header_cell.value))
+                    
+                    # Check all data cells in the column
+                    for cell in column[1:]:  # Skip header row
                         try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
+                            if cell.value is not None:
+                                cell_length = len(str(cell.value))
+                                if cell_length > max_length:
+                                    max_length = cell_length
+                        except (TypeError, AttributeError):
                             pass
-                    adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                    
+                    # Set width with padding and reasonable limits
+                    # Minimum width of 10, maximum of 80, add 3 characters for padding
+                    adjusted_width = max(10, min(max_length + 3, 80))
                     worksheet.column_dimensions[column_letter].width = adjusted_width
                 
-                # Add header formatting
-                from openpyxl.styles import Font, PatternFill, Alignment
-                header_font = Font(bold=True, color="FFFFFF")
-                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-                header_alignment = Alignment(horizontal="center", vertical="center")
+                # Add comprehensive formatting for better readability
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
                 
+                # Header formatting
+                header_font = Font(bold=True, color="FFFFFF", size=12)
+                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                
+                # Data cell formatting
+                data_font = Font(size=10)
+                data_alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                
+                # Border styling
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                
+                # Apply header formatting
                 for cell in worksheet[1]:
                     cell.font = header_font
                     cell.fill = header_fill
                     cell.alignment = header_alignment
+                    cell.border = thin_border
+                
+                # Apply data formatting to all data rows
+                for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+                    for cell in row:
+                        cell.font = data_font
+                        cell.alignment = data_alignment
+                        cell.border = thin_border
+                
+                # Set row height for better readability
+                for row in range(1, worksheet.max_row + 1):
+                    worksheet.row_dimensions[row].height = 20
             
             # Get absolute file path
             absolute_filepath = os.path.abspath(filepath)
@@ -203,7 +203,7 @@ class ExportLeadsToDocTool(Tool):
                 "total_leads": len(input_data)
             }
             
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, OSError, PermissionError) as e:
             return {
                 "success": False,
                 "error": f"Failed to export leads to Excel: {str(e)}"

@@ -8,21 +8,23 @@ class Workflow:
         self.nodes = nodes
         self.name = name
         self.global_context = ''
-
         logger.info(f"Workflow {self.name} initialized with {len(self.nodes)} nodes")
     
-
-    def run(self, prompt: str):
-        next_node_input = {}
+    async def run(self, prompt: str):
+        next_node_input = { 
+            'data': {} 
+        }
 
         try:
             for node in self.nodes:
-                next_node_input = node.call(f"User instructions: {prompt} \n\nRun {node.name} with input data: {next_node_input}")
+                node_input = { "User instructions": prompt, "Input": next_node_input['data'] } if next_node_input['data'] else { "User instructions": prompt }
+                next_node_input = await node.call(node_input)
                 if next_node_input['success'] is False:
                     logger.error(f"Workflow {self.name} node {node.name} failed with input data: {next_node_input}")
                     raise Exception(f"Workflow {self.name} node {node.name} failed with input data: {next_node_input}")
         except Exception as e:
-            logger.error(f"Workflow {self.name} failed with input data: {input_data}")
+            logger.exception(e)
+            logger.error(f"Workflow {self.name} failed with input data: {next_node_input}")
 
         return next_node_input
 

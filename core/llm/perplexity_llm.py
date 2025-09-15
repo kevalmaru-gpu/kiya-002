@@ -11,47 +11,50 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-class GeminiLLM(BaseLLM):
+class PerplexityLLM(BaseLLM):
     """
-    Gemini LLM implementation that inherits from BaseLLM.
-    Handles Google's Gemini API integration with optional web search capabilities.
+    Perplexity LLM implementation that inherits from BaseLLM.
+    Handles Perplexity API integration with real-time web search capabilities.
     
     Features:
-    - Real-time web search using Google Search tool
+    - Real-time web search using Perplexity's built-in capabilities
     - Configurable web search enable/disable
     - JSON response formatting
     - Conversation history support
+    - Multiple model support (llama-3.1-sonar, llama-3.1-sonar-128k, etc.)
     """
     
-    def __init__(self, instruction: str, model: str, enable_web_search: bool = True):
+    def __init__(self, instruction: str, model: str = "sonar", enable_web_search: bool = True):
         """
-        Initialize the Gemini LLM with instruction and API key.
+        Initialize the Perplexity LLM with instruction and API key.
         
         Args:
             instruction (str): The system instruction for the LLM
-            model (str): The model to use
+            model (str): The model to use (default: llama-3.1-sonar)
             enable_web_search (bool): Whether to enable web search functionality
         """
-        super().__init__(instruction, "gemini")
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        super().__init__(instruction, "perplexity")
+        self.api_key = os.getenv("PERPLEXITY_API_KEY")
+        self.base_url = "https://api.perplexity.ai/chat/completions"
+        self.model = model
         self.enable_web_search = enable_web_search
         
         if not self.api_key:
-            logger.error("GEMINI_API_KEY environment variable is not set!")
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+            logger.error("PERPLEXITY_API_KEY environment variable is not set!")
+            raise ValueError("PERPLEXITY_API_KEY environment variable is required")
     
     async def query(self, instruction: str, prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """
-        Query the Gemini LLM with a prompt and optional conversation history.
+        Query the Perplexity LLM with a prompt and optional conversation history.
         
         Args:
+            instruction (str): The system instruction for the LLM
             prompt (str): The user's prompt/query
             history (Optional[List[Dict[str, str]]]): Conversation history in format:
                 [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
         
         Returns:
-            str: The Gemini LLM's response
+            str: The Perplexity LLM's response
         """
         try:
             # Prepare the full prompt with instruction and history
@@ -60,35 +63,50 @@ class GeminiLLM(BaseLLM):
             logger.info("Full prompt: %s", full_prompt)
             
             # Prepare the request payload
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": full_prompt
-                    }]
-                }]
-            }
+            messages = []
             
-            # Add web search tool if enabled
-            if self.enable_web_search:
-                payload["tools"] = [{
-                    "google_search": {}
-                }]
+            # Add system instruction
+            messages.append({
+                "role": "system",
+                "content": instruction
+            })
+            
+            # Add conversation history if provided
+            if history:
+                for message in history:
+                    messages.append({
+                        "role": message.get("role", "user"),
+                        "content": message.get("content", "")
+                    })
+            
+            # Add current prompt
+            messages.append({
+                "role": "user",
+                "content": prompt,
+                "response_format": {
+                    "type": "json_schema"
+                }
+            })
+            
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                # "max_tokens": 1000,
+                # "temperature": 0.2,
+                "stream": False
+            }
             
             logger.info("Payload: %s", payload)
             
             # Make API request
             headers = {
-                "Content-Type": "application/json"
-            }
-            
-            params = {
-                "key": self.api_key
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
             }
             
             logger.info("API Key present: %s", bool(self.api_key))
             logger.info("API Key length: %s", len(self.api_key) if self.api_key else 0)
             logger.info("Request URL: %s", self.base_url)
-            logger.info("Request params: %s", params)
             
             logger.info("Starting API request...")
             async with aiohttp.ClientSession() as session:
@@ -96,7 +114,6 @@ class GeminiLLM(BaseLLM):
                 async with session.post(
                     self.base_url,
                     headers=headers,
-                    params=params,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=300)
                 ) as response:
@@ -107,28 +124,28 @@ class GeminiLLM(BaseLLM):
                         result = await response.json()
                         logger.info("API response structure: %s", list(result.keys()))
                         
-                        if "candidates" in result and len(result["candidates"]) > 0:
-                            candidate = result["candidates"][0]
-                            logger.info("Candidate structure: %s", list(candidate.keys()))
+                        if "choices" in result and len(result["choices"]) > 0:
+                            choice = result["choices"][0]
+                            logger.info("Choice structure: %s", list(choice.keys()))
                             
-                            if "content" in candidate and "parts" in candidate["content"]:
-                                response_text = candidate["content"]["parts"][0].get("text", "No response generated")
+                            if "message" in choice and "content" in choice["message"]:
+                                response_text = choice["message"]["content"]
                                 logger.info("Response text length: %s", len(response_text))
                                 return self._ensure_json_response(response_text)
                             else:
-                                logger.error(f"No content/parts in candidate: {candidate}")
+                                logger.error(f"No message/content in choice: {choice}")
                         else:
-                            logger.error(f"No candidates in response: {result}")
+                            logger.error(f"No choices in response: {result}")
                         return self._ensure_json_response("No response generated")
                     else:
                         response_text = await response.text()
-                        logger.error(f"Gemini API returned error status {response.status}")
+                        logger.error(f"Perplexity API returned error status {response.status}")
                         logger.error(f"Response headers: {dict(response.headers)}")
                         logger.error(f"Response body: {response_text}")
                         raise Exception(f"API Error {response.status}: {response_text}")
 
         except Exception as e:
-            logger.error(f"Error in Gemini LLM query: {type(e).__name__}: {str(e)}")
+            logger.error(f"Error in Perplexity LLM query: {type(e).__name__}: {str(e)}")
             logger.error(f"Full exception details: {repr(e)}")
             logger.error(f"Exception args: {e.args}")
             logger.error(f"Exception dir: {[attr for attr in dir(e) if not attr.startswith('_')]}")
@@ -148,7 +165,10 @@ class GeminiLLM(BaseLLM):
         try:
             # Try to parse the response as JSON directly
             parsed_json = json.loads(response_text)
-            return parsed_json
+            return {
+                "response": parsed_json,
+                "status": "success",
+            }
         except (json.JSONDecodeError, TypeError):
             # If not valid JSON, try to extract JSON from markdown code blocks
             try:
@@ -208,6 +228,7 @@ class GeminiLLM(BaseLLM):
         Prepare the full prompt including instruction and conversation history.
         
         Args:
+            instruction (str): The system instruction
             prompt (str): The current user prompt
             history (Optional[List[Dict[str, str]]]): Conversation history
         
@@ -220,7 +241,7 @@ class GeminiLLM(BaseLLM):
         
         # Add web search capability information if enabled
         if self.enable_web_search:
-            full_prompt += "WEB SEARCH ENABLED: You have access to real-time web search capabilities. Use this to find current, up-to-date information when needed. Always search for the most recent information when the user asks about current events, recent developments, or anything that might require current data.\n\n"
+            full_prompt += "WEB SEARCH ENABLED: You have access to real-time web search capabilities through Perplexity. Use this to find current, up-to-date information when needed. Always search for the most recent information when the user asks about current events, recent developments, or anything that might require current data.\n\n"
         
         # Add conversation history if provided
         if history:
@@ -245,3 +266,22 @@ class GeminiLLM(BaseLLM):
         """
         self.enable_web_search = enabled
         logger.info("Web search %s", 'enabled' if enabled else 'disabled')
+    
+    def set_model(self, model: str) -> None:
+        """
+        Set the Perplexity model to use.
+        
+        Args:
+            model (str): The model name (e.g., 'llama-3.1-sonar', 'llama-3.1-sonar-128k')
+        """
+        self.model = model
+        logger.info("Model set to: %s", model)
+    
+    def get_model(self) -> str:
+        """
+        Get the current model being used.
+        
+        Returns:
+            str: The current model name
+        """
+        return self.model
